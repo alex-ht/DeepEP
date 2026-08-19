@@ -330,6 +330,64 @@ def decode_combine(x: torch.Tensor,
     return combined_x, event
 ```
 
+### FSDP Compatibility
+
+When using DeepEP with [PyTorch FSDP](https://pytorch.org/docs/stable/fsdp.html) (Fully Sharded Data Parallel), follow these guidelines to avoid `cudaErrorIllegalAddress` and stream ordering issues:
+
+**1. Disable async mode with FSDP**
+
+FSDP uses its own NCCL stream for all-gather/reduce-scatter operations. Using DeepEP's async mode (`async_with_compute_stream=True`) can cause stream ordering conflicts. Always set `async_with_compute_stream=False` when mixing FSDP and DeepEP:
+
+```python
+recv_x, recv_topk_idx, recv_topk_weights, handle, event = buffer.dispatch(
+    x, topk_idx=topk_idx, topk_weights=topk_weights,
+    num_experts=num_experts,
+    async_with_compute_stream=False,  # Required with FSDP
+)
+```
+
+**2. Barrier synchronization**
+
+Ensure proper synchronization between FSDP all-gathers and DeepEP dispatch/combine:
+
+```python
+# FSDP all-gather completes
+# ... FSDP forward pass ...
+
+# Synchronize before DeepEP dispatch
+torch.cuda.synchronize()
+buffer.barrier()
+
+# DeepEP dispatch/combine
+recv_x, _, _, handle, _ = buffer.dispatch(x, ...)
+combined_x, _, _ = buffer.combine(recv_x, handle=handle, ...)
+
+# Synchronize before next FSDP operation
+torch.cuda.synchronize()
+```
+
+**3. Hidden dimension alignment**
+
+DeepEP requires the hidden dimension to be a multiple of 256 for vectorized loads. For large models like GPT-OSS 120B (hidden=7168), this is satisfied. Verify your model's hidden dimension before using DeepEP:
+
+```python
+# Valid: 256, 512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192
+assert hidden % 256 == 0
+```
+
+**4. Communication group isolation**
+
+FSDP and DeepEP should use separate NCCL communicators to avoid resource contention:
+
+```python
+# FSDP uses its own process group
+fsdp_pg = dist.new_group(ranks=fsdp_ranks)
+
+# DeepEP uses a separate process group for EP
+ep_pg = dist.new_group(ranks=ep_ranks)
+buffer = ElasticBuffer(ep_pg, ...)
+```
+
 ### Environment variables
 
 The library provides some environment variables, which may be useful:
