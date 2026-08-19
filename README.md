@@ -6,6 +6,7 @@ Despite its lightweight design, DeepEP's performance matches or exceeds hardware
 
 ## News
 
+- **Large model support**: Fixed `cudaErrorIllegalAddress` when using large models (e.g., GPT-OSS 120B with hidden=7168) by resolving integer overflow in buffer size calculations and kernel comparisons. Added hidden dimension validation requiring multiples of 256 for vectorized loads.
 - **V2 release**: A complete refactoring of Expert Parallelism — achieving extreme performance with several times fewer SM resources compared to V1, while supporting significantly larger scale-up and scale-out domains. V2 has also switched from the NVSHMEM backend to the more lightweight **NCCL Gin backend**.
 
 ### New features
@@ -70,6 +71,7 @@ For V1 performance data, see [docs/legacy.md](docs/legacy.md#performance).
 - NCCL 2.30.4 and above
 - NVLink for intranode communication
 - RDMA network for internode communication
+- **Model hidden dimension**: Must be a multiple of 256 for vectorized loads. Common valid values: 256, 512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192.
 
 ### Install NCCL dependency
 

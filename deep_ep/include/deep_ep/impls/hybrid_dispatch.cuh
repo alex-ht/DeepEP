@@ -469,16 +469,18 @@ hybrid_dispatch_impl(
 
         // Shape of `token_metadata_at_forward`: `[kNumChannels, kNumScaleoutRanks * kNumMaxTokensPerChannel + 1, kNumForwardMetadataDims]`
         constexpr int kNumForwardMetadataDims = 2 + kNumTopk * 2;
-        token_metadata_at_forward += channel_idx * ((kNumScaleoutRanks * kNumMaxTokensPerChannel + 1) * kNumForwardMetadataDims);
+        const int64_t metadata_offset = static_cast<int64_t>(channel_idx) * (kNumScaleoutRanks * kNumMaxTokensPerChannel + 1) * kNumForwardMetadataDims;
+        token_metadata_at_forward += metadata_offset;
 
         // Shape of `dst_buffer_slot_idx`: `[kNumChannels, kNumScaleoutRanks, kNumMaxTokensPerChannel, kNumTopk]`
-        dst_buffer_slot_idx += channel_idx * (kNumScaleoutRanks * kNumMaxTokensPerChannel * kNumTopk);
+        const int64_t slot_idx_offset = static_cast<int64_t>(channel_idx) * (kNumScaleoutRanks * kNumMaxTokensPerChannel * kNumTopk);
+        dst_buffer_slot_idx += slot_idx_offset;
 
         // Transform linked list index
         const auto transform_linked_list_idx = [=](const int& idx) {
             constexpr int kNumTokensInLinkedList = kNumMaxTokensPerChannel * kNumScaleoutRanks + 1;
-            return channel_idx * (kNumTokensInLinkedList * kNumScaleupRanks) +
-                idx * kNumScaleupRanks + scaleup_rank_idx;
+            return static_cast<int>(static_cast<int64_t>(channel_idx) * (kNumTokensInLinkedList * kNumScaleupRanks) +
+                static_cast<int64_t>(idx) * kNumScaleupRanks + scaleup_rank_idx);
         };
 
         // Forward tokens from scale-out ranks
