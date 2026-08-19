@@ -90,13 +90,18 @@ class CustomBuildPy(build_py):
 
 
 if __name__ == '__main__':
-    # TODO: make NVSHMEM and legacy optional
-    nvshmem_root_dir = find_pkgs.find_nvshmem_root()
+    # NVSHMEM is optional
+    nvshmem_root_dir = find_pkgs.find_nvshmem_root(optional=True)
+    has_nvshmem = nvshmem_root_dir is not None
+
     nccl_root_dir = find_pkgs.find_nccl_root()
 
     # `128,2417` is used to suppress warnings of `fmt`
     cxx_flags = ['-O3', '-Wno-deprecated-declarations', '-Wno-unused-variable', '-Wno-sign-compare', '-Wno-reorder', '-Wno-attributes']
     nvcc_flags = ['-O3', '-Xcompiler', '-O3', '--extended-lambda', '--diag-suppress=128,2417']
+    if has_nvshmem:
+        cxx_flags.append('-DHAS_NVSHMEM')
+        nvcc_flags.append('-DHAS_NVSHMEM')
     sources = ['csrc/python_api.cpp', 'csrc/kernels/legacy/layout.cu', 'csrc/kernels/legacy/intranode.cu']
     include_dirs = [f'{current_dir}/deep_ep/include',
                     f'{current_dir}/third-party/fmt/include',
@@ -105,16 +110,17 @@ if __name__ == '__main__':
     nvcc_dlink = []
     extra_link_args = ['-lcuda']
 
-    # NVSHMEM flags. Use the real on-disk file name (which may be SONAME-only
+    # NVSHMEM flags (optional). Use the real on-disk file name (which may be SONAME-only
     # like ``libnvshmem_host.so.3`` when NVSHMEM came from a pip wheel) so
     # that ``-l:NAME`` can resolve. The static device library always ships
     # under its canonical name, so it stays hard-coded.
-    sources.extend(['csrc/kernels/legacy/internode.cu', 'csrc/kernels/legacy/internode_ll.cu', 'csrc/kernels/backend/nvshmem.cu'])
-    include_dirs.extend([f'{nvshmem_root_dir}/include'])
-    library_dirs.extend([f'{nvshmem_root_dir}/lib'])
-    nvcc_dlink.extend(['-dlink', f'-L{nvshmem_root_dir}/lib', '-lnvshmem_device'])
-    nvshmem_host_lib = get_nvshmem_host_lib_name(nvshmem_root_dir)
-    extra_link_args.extend([f'-l:{nvshmem_host_lib}', '-l:libnvshmem_device.a', f'-Wl,-rpath,{nvshmem_root_dir}/lib'])
+    if has_nvshmem:
+        sources.extend(['csrc/kernels/legacy/internode.cu', 'csrc/kernels/legacy/internode_ll.cu', 'csrc/kernels/backend/nvshmem.cu'])
+        include_dirs.extend([f'{nvshmem_root_dir}/include'])
+        library_dirs.extend([f'{nvshmem_root_dir}/lib'])
+        nvcc_dlink.extend(['-dlink', f'-L{nvshmem_root_dir}/lib', '-lnvshmem_device'])
+        nvshmem_host_lib = get_nvshmem_host_lib_name(nvshmem_root_dir)
+        extra_link_args.extend([f'-l:{nvshmem_host_lib}', '-l:libnvshmem_device.a', f'-Wl,-rpath,{nvshmem_root_dir}/lib'])
 
     # NCCL flags. Same story as NVSHMEM above — pip wheels ship
     # ``libnccl.so.2`` only, so resolve the real name dynamically.
@@ -181,7 +187,7 @@ if __name__ == '__main__':
     print(f' > Compilation flags: {extra_compile_args}')
     print(f' > Link flags: {extra_link_args}')
     print(f' > Arch list: {os.environ["TORCH_CUDA_ARCH_LIST"]}')
-    print(f' > NVSHMEM path: {nvshmem_root_dir}')
+    print(f' > NVSHMEM path: {nvshmem_root_dir if has_nvshmem else "(not found, disabled)"}')
     print(f' > NCCL path: {nccl_root_dir}')
     # Print persistent env variables
     persistent_envs = []
