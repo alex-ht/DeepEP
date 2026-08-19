@@ -923,6 +923,20 @@ class ElasticBuffer:
         """
         check_torch_deterministic()
 
+        # Validate hidden dimension alignment
+        # TMA requires 32-byte alignment: hidden * element_size must be multiple of 32
+        # Kernel requires hidden % 256 == 0 for vectorized loads
+        input_x = x[0] if isinstance(x, tuple) else x
+        hidden = input_x.shape[1]
+        elem_size = input_x.element_size()
+        assert hidden % 256 == 0, (
+            f'Hidden dimension must be a multiple of 256 for vectorized loads, got {hidden}. '
+            f'Common valid values: 256, 512, 1024, 2048, 3072, 4096, 5120, 6144, 7168, 8192.'
+        )
+        assert (hidden * elem_size) % 32 == 0, (
+            f'Hidden bytes ({hidden} * {elem_size} = {hidden * elem_size}) must be 32-byte aligned for TMA.'
+        )
+
         # Automatic decide SM and QP count
         num_topk = (handle.topk_idx if topk_idx is None else topk_idx).shape[1]
         num_sms = self.get_theoretical_num_sms(num_experts, num_topk) if num_sms == 0 else num_sms

@@ -42,7 +42,7 @@ combine_impl(nv_bfloat16* x,
     constexpr bool kDoExpandedSend = not kAllowMultipleReduction and kUseExpandedLayout;
 
     // We should assign the real number of received tokens if without CPU sync
-    if (num_reduced_tokens == kNumMaxTokensPerRank * kNumRanks)
+    if (static_cast<int64_t>(num_reduced_tokens) == static_cast<int64_t>(kNumMaxTokensPerRank) * kNumRanks)
         num_reduced_tokens = __ldg(psum_num_recv_tokens_per_scaleup_rank + kNumRanks - 1);
 
     // Buffer layouts

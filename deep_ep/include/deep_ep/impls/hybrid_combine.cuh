@@ -55,7 +55,7 @@ hybrid_combine_impl(nv_bfloat16* x,
     const auto workspace_layout = layout::WorkspaceLayout(workspace, kNumScaleoutRanks, kNumScaleupRanks, kNumExperts);
 
     // We should assign the real number of received tokens if without CPU sync
-    if (num_reduced_tokens == kNumMaxTokensPerRank * kNumRanks)
+    if (static_cast<int64_t>(num_reduced_tokens) == static_cast<int64_t>(kNumMaxTokensPerRank) * kNumRanks)
         num_reduced_tokens = __ldg(psum_num_recv_tokens_per_scaleup_rank + kNumScaleupRanks - 1);
 
     // Token layouts
@@ -159,10 +159,11 @@ hybrid_combine_impl(nv_bfloat16* x,
             #pragma unroll
             for (int i = 0; i < kNumScaleupRanksPerLane; ++ i) {
                 const auto j = i * 32 + lane_idx;
+                const int64_t linked_list_offset =
+                    static_cast<int64_t>(channel_idx) * (kNumScaleoutRanks * kNumMaxTokensPerChannel + 1) * kNumScaleupRanks +
+                    static_cast<int64_t>(stored_ll_idx[i]) * kNumScaleupRanks + j;
                 stored_token_idx[i] = i < (kNumScaleupRanksPerLane - 1) or j < kNumScaleupRanks ?
-                    __ldg(channel_linked_list +
-                          channel_idx * (kNumScaleoutRanks * kNumMaxTokensPerChannel + 1) * kNumScaleupRanks +
-                          stored_ll_idx[i] * kNumScaleupRanks + j) : -1;
+                    __ldg(channel_linked_list + linked_list_offset) : -1;
             }
             __syncwarp();
 
@@ -201,7 +202,8 @@ hybrid_combine_impl(nv_bfloat16* x,
                 constexpr int kMetadataStride = 2 + kNumTopk;
                 const auto src_global_token_idx = __ldg(src_metadata + token_idx * kMetadataStride + 0);
                 const auto src_token_idx = src_global_token_idx % kNumMaxTokensPerRank;
-                const auto src_scaleout_rank_idx = src_global_token_idx / (kNumMaxTokensPerRank * kNumScaleupRanks);
+                const auto src_scaleout_rank_idx = src_global_token_idx /
+                    static_cast<int>(static_cast<int64_t>(kNumMaxTokensPerRank) * kNumScaleupRanks);
                 auto token_buffer = [&]() {
                     if constexpr (kUseScaleupRankLayout) {
                         const auto src_slot_idx = __ldg(src_metadata + token_idx * kMetadataStride + 1) / kNumTopk;
@@ -361,7 +363,8 @@ hybrid_combine_impl(nv_bfloat16* x,
 
         // Shape of `token_metadata_at_forward`: `[kNumChannels, kNumScaleoutRanks * kNumMaxTokensPerChannel + 1, kNumForwardMetadataDims]`
         constexpr int kNumForwardMetadataDims = 2 + kNumTopk * 2;
-        token_metadata_at_forward += channel_idx * ((kNumScaleoutRanks * kNumMaxTokensPerChannel + 1) * kNumForwardMetadataDims);
+        const int64_t metadata_offset = static_cast<int64_t>(channel_idx) * (kNumScaleoutRanks * kNumMaxTokensPerChannel + 1) * kNumForwardMetadataDims;
+        token_metadata_at_forward += metadata_offset;
 
         // Overlap TMA stores and reduction
         int last_src_scaleout_rank_idx = -1;

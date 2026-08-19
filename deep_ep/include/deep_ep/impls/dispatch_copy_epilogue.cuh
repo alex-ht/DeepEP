@@ -60,7 +60,7 @@ dispatch_copy_epilogue_impl(void* buffer, void* workspace,
     cudaGridDependencySynchronize();
 
     // For no CPU sync case, the number of received tokens should be read from the GPU tensor
-    if (num_recv_tokens == kNumMaxTokensPerRank * kNumRanks)
+    if (static_cast<int64_t>(num_recv_tokens) == static_cast<int64_t>(kNumMaxTokensPerRank) * kNumRanks)
         num_recv_tokens = psum_num_recv_tokens_per_scaleup_rank[kNumScaleupRanks - 1];
 
     // Current rank indices should be maintained
